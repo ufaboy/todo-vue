@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, nextTick, ref } from "vue";
 import { useRoute } from 'vue-router'
 import { firebaseApp } from "@/utils/firebase";
 import { getFirestore, query, where, doc, addDoc, updateDoc, collection, getDocs, serverTimestamp } from "firebase/firestore";
@@ -7,7 +7,7 @@ import type { Task } from "@/utils/interfaces";
 import IconCheck from '@/components/IconCheck.vue'
 import IconCross from '@/components/IconCross.vue'
 import useColor from '@/composables/useColor'
-import { getTaskElement, getTaskID, getTaskIndex } from '@/utils/helper'
+import { getTaskElement, getTaskID, getTaskIndex, resetEditElements } from '@/utils/helper'
 const route = useRoute()
 const db = getFirestore(firebaseApp);
 const { getBackgroundColor } = useColor(354, 100, 46)
@@ -15,7 +15,6 @@ const tasks = ref<Task[]>([])
 const newTaskShow = ref(false)
 const taskText = ref<string>('')
 const taskIndex = ref<number>()
-const shiftY = ref(0)
 const longPressTimer = ref<NodeJS.Timeout>()
 const groupId = ref(route.params.id as string)
 
@@ -37,11 +36,13 @@ async function getTasks() {
 function pageClickHandler(event: Event) {
     const target = event.target as HTMLElement
     if (!target) return false;
-    if (taskIndex.value) {
+    if (Number.isInteger(taskIndex.value)) {
         taskIndex.value = undefined
+        resetEditElements()
+    } else if (newTaskShow.value) {
+        newTaskShow.value = false
     } else newTaskShow.value = true
-
-    console.log('pageClickHandler', event, target.closest('ul'));
+    console.log('pageClickHandler', { event: event });
 }
 function addTask() {
     newTaskShow.value = true
@@ -87,7 +88,7 @@ async function saveNewTask() {
 }
 function dragStartHandler(event: DragEvent) {
     const taskElement = getTaskElement(event)
-    event.dataTransfer.setDragImage(taskElement, 0 ,0);
+    event.dataTransfer.setDragImage(taskElement, 0, 0);
     setTimeout(() => taskElement.classList.add('dragging'), 0);
     console.log('dragStartHandler', { taskElement: taskElement });
 }
@@ -119,6 +120,30 @@ function sortList(event: DragEvent) {
     };
 }
 
+function mouseDownHandler(event: MouseEvent) {
+    const taskElement = getTaskElement(event)
+    console.log('mouseDownHandler', { taskElement: taskElement });
+    longPressTimer.value = setTimeout(() => {
+        taskElement.draggable = true
+    }, 500)
+}
+function mouseUpHandler(event: MouseEvent) {
+    const taskElement = getTaskElement(event)
+    clearTimeout(longPressTimer.value)
+    const index = Number(taskElement.dataset.index)
+    if (Number.isInteger(taskIndex.value) && index !== taskIndex.value) {
+        taskIndex.value = undefined
+        resetEditElements()
+    } else {
+        taskIndex.value = Number(taskElement.dataset.index)
+        taskElement.classList.add('edit')
+        nextTick(() => {
+            const inputElement = taskElement.querySelector('input') as HTMLElement
+            inputElement.focus()
+        })
+    }
+}
+
 getTasks()
 
 </script>
@@ -126,18 +151,18 @@ getTasks()
     <div class="min-h-full" @click.self="pageClickHandler">
         <input v-if="newTaskShow" class="bg-blue-300 p-3 w-full" autofocus type="text" v-model="taskText"
             @change="saveNewTask">
-        <ul class="list relative" :style="ulStyles">
-            <li :id="task.id" draggable="true" :data-index="index" v-for="(task, index) in tasks" :key="task.id"
+        <ul id="task-list" class="list relative" :class="{ 'shade': taskIndex !== undefined }" :style="ulStyles">
+            <li :id="task.id" :data-index="index" v-for="(task, index) in tasks" :key="task.id"
                 @dragstart="dragStartHandler" @dragover="dragOverHandler" @dragend="dragEndHandler"
-                class="task  w-full text-xl font-bold ">
+                @mousedown="mouseDownHandler" @mouseup="mouseUpHandler" class="task w-full text-xl font-bold ">
                 <div class="details w-full flex flex-row flex-nowrap relative">
                     <div class="absolute left-0 top-0">
                         <IconCheck />
                     </div>
-                    <div class="w-full z-10 flex flex-row"
+                    <div class="slider w-full z-10 flex flex-row"
                         :style="{ 'background-color': getBackgroundColor(index, tasks.length) }">
-                        <input v-if="index === taskIndex" :autofocus="index === taskIndex" class="bg-inherit p-3 flex-1"
-                            type="text" :value="task.name" @change="updateTask">
+                        <input v-if="index === taskIndex" class="bg-inherit p-3 flex-1" type="text" :value="task.name"
+                            @change="updateTask">
                         <div v-else class="py-3 px-4 flex-1">{{ task.name }}</div>
                     </div>
                     <div class="absolute right-0 top-0">
@@ -149,13 +174,26 @@ getTasks()
     </div>
 </template>
 <style lang="scss">
+.shade {
+    .details {
+        opacity: 0.15;
+    }
+
+    .task.edit .details {
+        opacity: 1;
+    }
+}
+
 .dragging {
-    box-shadow: 0 2px 16px rgba(0, 0, 0, .25);
+    overflow: hidden;
     // opacity: 0.6;
 
     .details {
         // opacity: 0;
+        box-shadow: 0 2px 16px rgba(0, 0, 0, .25);
         transform: scale(1.05);
+        border-top: 1px solid;
+        border-bottom: 1px solid;
     }
 }
 

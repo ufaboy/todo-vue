@@ -12,4 +12,11 @@ function getTaskIndex(event: Event) {
   return Number(element.dataset.index)
 }
 
-export { getTaskElement, getTaskID, getTaskIndex }
+function resetEditElements() {
+  const editElements = document.querySelectorAll('.edit')
+  editElements.forEach((element) => {
+    element.classList.remove('edit')
+  })
+}
+
+export { getTaskElement, getTaskID, getTaskIndex, resetEditElements }
