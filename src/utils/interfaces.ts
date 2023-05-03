@@ -14,6 +14,7 @@ interface BaseGroup {
 }
 interface Group extends BaseGroup {
   id: string
+  tasks?: string[]
   taskCount: number
   createdAt: string
   deletedAt: string

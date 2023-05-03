@@ -3,11 +3,17 @@ import { computed, nextTick, ref } from "vue";
 import { useRoute } from 'vue-router'
 import { firebaseApp } from "@/utils/firebase";
 import { getFirestore, query, where, doc, addDoc, updateDoc, collection, getDocs, serverTimestamp } from "firebase/firestore";
-import type { Task } from "@/utils/interfaces";
+import type { Task, Group } from "@/utils/interfaces";
 import IconCheck from '@/components/IconCheck.vue'
 import IconCross from '@/components/IconCross.vue'
 import useColor from '@/composables/useColor'
 import { getTaskElement, getTaskID, getTaskIndex, resetEditElements } from '@/utils/helper'
+
+interface Props {
+    groups?: Group[]
+}
+const props = defineProps<Props>()
+
 const route = useRoute()
 const db = getFirestore(firebaseApp);
 const { getBackgroundColor } = useColor(354, 100, 46)
@@ -21,18 +27,31 @@ const groupId = ref(route.params.id as string)
 const ulStyles = computed(() => {
     return taskIndex.value ? { transform: `translate3d(0px, -${52 * taskIndex.value}px, 0px)` } : ''
 })
-
+const group = computed(() => {
+    return props.groups && props.groups.find(item => item.id === groupId.value)
+})
+const groupTasks = computed(() => {
+    return group.value && group.value.tasks
+})
+const sortedTasks = computed(() => {
+    return groupTasks.value && tasks.value.length ? groupTasks.value.map(item => tasks.value.find(element => element.id === item)) : []
+})
 async function getTasks() {
     const q = query(collection(db, "tasks"), where("groupId", "==", groupId.value));
     const querySnapshot = await getDocs(q);
-    tasks.value = []
+    let taskArray: Task[] = []
     querySnapshot.forEach((doc) => {
-        // console.log('task', {id: doc.id, data: doc.data()});
         const taskData = doc.data() as Task
         const task = { ...taskData, id: doc.id }
-        tasks.value.push(task)
+        taskArray.push(task)
     })
+    tasks.value = taskArray
+    /*     const groupRef = doc(db, "groups", groupId.value);
+        await updateDoc(groupRef, {
+            tasks: loadedTasks.map(i => i.id)
+        }); */
 }
+
 function pageClickHandler(event: Event) {
     const target = event.target as HTMLElement
     if (!target) return false;
@@ -86,6 +105,15 @@ async function saveNewTask() {
     taskText.value = ''
     getTasks()
 }
+async function saveOrderTasksInGroup() {
+    const orderedTasks: string[] = []
+    const taskElements = document.querySelectorAll(".task");
+    taskElements.forEach(item => orderedTasks.push(item.id))
+    const groupRef = doc(db, "groups", groupId.value);
+    await updateDoc(groupRef, {
+        tasks: orderedTasks
+    });
+}
 function dragStartHandler(event: DragEvent) {
     const taskElement = getTaskElement(event)
     event.dataTransfer.setDragImage(taskElement, 0, 0);
@@ -100,6 +128,7 @@ function dragOverHandler(event: DragEvent) {
 function dragEndHandler(event: Event) {
     const taskElement = getTaskElement(event)
     taskElement.classList.remove('dragging')
+    saveOrderTasksInGroup()
     console.log('dragEndHandler', { taskElement: taskElement });
 }
 function sortList(event: DragEvent) {
@@ -152,7 +181,7 @@ getTasks()
         <input v-if="newTaskShow" class="bg-blue-300 p-3 w-full" autofocus type="text" v-model="taskText"
             @change="saveNewTask">
         <ul id="task-list" class="list relative" :class="{ 'shade': taskIndex !== undefined }" :style="ulStyles">
-            <li :id="task.id" :data-index="index" v-for="(task, index) in tasks" :key="task.id"
+            <li :id="task.id" :data-index="index" v-for="(task, index) in sortedTasks" :key="task.id"
                 @dragstart="dragStartHandler" @dragover="dragOverHandler" @dragend="dragEndHandler"
                 @mousedown="mouseDownHandler" @mouseup="mouseUpHandler" class="task w-full text-xl font-bold ">
                 <div class="details w-full flex flex-row flex-nowrap relative">
