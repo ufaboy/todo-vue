@@ -1,56 +1,34 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from "vue";
+import { computed, nextTick, ref, watch } from 'vue';
 import { useRoute } from 'vue-router'
-import { firebaseApp } from "@/utils/firebase";
-import { getFirestore, query, where, doc, addDoc, updateDoc, collection, getDocs, serverTimestamp } from "firebase/firestore";
-import type { Task, Group } from "@/utils/interfaces";
-import IconCheck from '@/components/IconCheck.vue'
-import IconCross from '@/components/IconCross.vue'
+import { firebaseApp } from '@/utils/firebase';
+import { documentId, getFirestore, query, where, doc, addDoc, updateDoc, deleteDoc, collection, getDocs, serverTimestamp } from "firebase/firestore";
 import useColor from '@/composables/useColor'
 import { getTaskElement, getTaskID, getTaskIndex, resetEditElements } from '@/utils/helper'
+import type { Task, Group } from '@/utils/interfaces';
+
+import IconCheck from '@/components/IconCheck.vue'
+import IconCross from '@/components/IconCross.vue'
 
 interface Props {
-    groups?: Group[]
+    tasks: Task[]
 }
 const props = defineProps<Props>()
-
+const emit = defineEmits(['get-tasks',])
 const route = useRoute()
 const db = getFirestore(firebaseApp);
 const { getBackgroundColor } = useColor(354, 100, 46)
-const tasks = ref<Task[]>([])
 const newTaskShow = ref(false)
 const taskText = ref<string>('')
 const taskIndex = ref<number>()
 const longPressTimer = ref<NodeJS.Timeout>()
 const groupId = ref(route.params.id as string)
 
+const mouseMoveX = ref(0)
+
 const ulStyles = computed(() => {
     return taskIndex.value ? { transform: `translate3d(0px, -${52 * taskIndex.value}px, 0px)` } : ''
 })
-const group = computed(() => {
-    return props.groups && props.groups.find(item => item.id === groupId.value)
-})
-const groupTasks = computed(() => {
-    return group.value && group.value.tasks
-})
-const sortedTasks = computed(() => {
-    return groupTasks.value && tasks.value.length ? groupTasks.value.map(item => tasks.value.find(element => element.id === item)) : []
-})
-async function getTasks() {
-    const q = query(collection(db, "tasks"), where("groupId", "==", groupId.value));
-    const querySnapshot = await getDocs(q);
-    let taskArray: Task[] = []
-    querySnapshot.forEach((doc) => {
-        const taskData = doc.data() as Task
-        const task = { ...taskData, id: doc.id }
-        taskArray.push(task)
-    })
-    tasks.value = taskArray
-    /*     const groupRef = doc(db, "groups", groupId.value);
-        await updateDoc(groupRef, {
-            tasks: loadedTasks.map(i => i.id)
-        }); */
-}
 
 function pageClickHandler(event: Event) {
     const target = event.target as HTMLElement
@@ -75,48 +53,68 @@ async function updateTask(event: Event) {
     });
     taskIndex.value = undefined
     taskText.value = ''
-    getTasks()
 }
 async function completeTask(event: Event) {
+    const taskIndex = getTaskIndex(event)
+    resetSliderStyle(event)
     const taskID = getTaskID(event)
+    // console.log('completeTask', { event: event, taskID: taskID });
     if (!taskID) return false
     const docRef = doc(db, "tasks", taskID);
     await updateDoc(docRef, {
         completedAt: serverTimestamp()
     });
+    if (props.tasks) {
+        const x = [...props.tasks]
+        const splicedArr = x.splice(taskIndex, 1)
+        const orderedTasks = [...x, ...splicedArr].map(item => item.id)
+        console.log('completeTask', { splicedArr: splicedArr, orderedTasks: orderedTasks });
+        await saveOrderTasks(orderedTasks)
+    }
+    emit('get-tasks')
 }
-async function removeTask(event: Event) {
+async function deleteTask(event: Event) {
+    resetSliderStyle(event)
+    const taskElement = getTaskElement(event)
     const taskID = getTaskID(event)
+    taskElement.style.backgroundColor = ''
     if (!taskID) return false
     const docRef = doc(db, "tasks", taskID);
-    await updateDoc(docRef, {
-        deletedAt: serverTimestamp()
-    });
+    await deleteDoc(docRef);
+    emit('get-tasks')
 }
 
 async function saveNewTask() {
-    await addDoc(collection(db, "tasks"), {
+    const result = await addDoc(collection(db, "tasks"), {
         name: taskText.value,
         groupId: groupId.value,
         createdAt: serverTimestamp()
     });
+    const docRef = doc(db, "groups", groupId.value);
+    await updateDoc(docRef, {
+        tasks: [...props.tasks.map(item => item.id), result.id]
+    });
     newTaskShow.value = false
     taskIndex.value = undefined
     taskText.value = ''
-    getTasks()
+    emit('get-tasks')
 }
-async function saveOrderTasksInGroup() {
+function getOrderTasksInGroup() {
     const orderedTasks: string[] = []
     const taskElements = document.querySelectorAll(".task");
     taskElements.forEach(item => orderedTasks.push(item.id))
+    return orderedTasks
+}
+async function saveOrderTasks(orderedTasks: string[]) {
     const groupRef = doc(db, "groups", groupId.value);
     await updateDoc(groupRef, {
         tasks: orderedTasks
     });
 }
+
 function dragStartHandler(event: DragEvent) {
     const taskElement = getTaskElement(event)
-    event.dataTransfer.setDragImage(taskElement, 0, 0);
+    event.dataTransfer?.setDragImage(taskElement, 0, 0);
     setTimeout(() => taskElement.classList.add('dragging'), 0);
     console.log('dragStartHandler', { taskElement: taskElement });
 }
@@ -128,9 +126,11 @@ function dragOverHandler(event: DragEvent) {
 function dragEndHandler(event: Event) {
     const taskElement = getTaskElement(event)
     taskElement.classList.remove('dragging')
-    saveOrderTasksInGroup()
+    const orderedTasks = getOrderTasksInGroup()
+    saveOrderTasks(orderedTasks)
     console.log('dragEndHandler', { taskElement: taskElement });
 }
+
 function sortList(event: DragEvent) {
     event.preventDefault();
     const sortableList = document.querySelector(".list");
@@ -151,10 +151,13 @@ function sortList(event: DragEvent) {
 
 function mouseDownHandler(event: MouseEvent) {
     const taskElement = getTaskElement(event)
+    mouseMoveX.value = event.screenX
     console.log('mouseDownHandler', { taskElement: taskElement });
     longPressTimer.value = setTimeout(() => {
         taskElement.draggable = true
     }, 500)
+    taskElement.addEventListener('mouseup', mouseUpHandler)
+    taskElement.addEventListener('mousemove', mouseMoveHandler)
 }
 function mouseUpHandler(event: MouseEvent) {
     const taskElement = getTaskElement(event)
@@ -172,8 +175,42 @@ function mouseUpHandler(event: MouseEvent) {
         })
     }
 }
-
-getTasks()
+function mouseMoveHandler(event: MouseEvent) {
+    const taskElement = getTaskElement(event)
+    const sliderElement = (event.target as HTMLElement).closest('.slider') as HTMLElement
+    taskElement.removeEventListener('mouseup', mouseUpHandler)
+    const diffX = event.screenX - mouseMoveX.value
+    if (diffX > 40) {
+        sliderElement.style.backgroundColor = 'green'
+        taskElement.addEventListener('mouseup', completeTask)
+        taskElement.addEventListener('mouseleave', completeTask)
+    } else if (diffX < -40) {
+        taskElement.addEventListener('mouseup', deleteTask)
+        taskElement.addEventListener('mouseleave', deleteTask)
+    }
+    sliderElement.style.transform = `translate3d(${diffX}px, 0px, 0px)`
+    console.log('mouseMoveHandler', { diffX: diffX });
+}
+function resetSliderStyle(event: Event) {
+    const taskElement = getTaskElement(event)
+    taskElement.removeEventListener('mouseup', mouseUpHandler)
+    taskElement.removeEventListener('mousemove', mouseMoveHandler)
+    taskElement.removeEventListener('mouseleave', completeTask)
+    const sliderElement = taskElement.querySelector('.slider') as HTMLElement
+    sliderElement.style.transform = ''
+}
+function getSliderClassObj(task: Task) {
+    return { 'line-through bg-black text-gray-500': task.completedAt }
+}
+function getSliderStyleObj(task: Task, index: number) {
+    return !task.completedAt ? { 'background-color': getBackgroundColor(index, props.tasks.length) } : {}
+}
+// watch(() => groupTasks.value, newValue => {
+//     if (newValue && newValue.length) {
+//         getTasks()
+//     }
+// })
+// if (groupTasks.value && groupTasks.value.length) getTasks()
 
 </script>
 <template>
@@ -181,15 +218,15 @@ getTasks()
         <input v-if="newTaskShow" class="bg-blue-300 p-3 w-full" autofocus type="text" v-model="taskText"
             @change="saveNewTask">
         <ul id="task-list" class="list relative" :class="{ 'shade': taskIndex !== undefined }" :style="ulStyles">
-            <li :id="task.id" :data-index="index" v-for="(task, index) in sortedTasks" :key="task.id"
+            <li :id="task.id" :data-index="index" v-for="(task, index) in tasks" :key="task.id"
                 @dragstart="dragStartHandler" @dragover="dragOverHandler" @dragend="dragEndHandler"
-                @mousedown="mouseDownHandler" @mouseup="mouseUpHandler" class="task w-full text-xl font-bold ">
+                @mousedown="mouseDownHandler" class="task w-full text-xl font-bold ">
                 <div class="details w-full flex flex-row flex-nowrap relative">
                     <div class="absolute left-0 top-0">
                         <IconCheck />
                     </div>
-                    <div class="slider w-full z-10 flex flex-row"
-                        :style="{ 'background-color': getBackgroundColor(index, tasks.length) }">
+                    <div class="slider w-full z-10 flex flex-row text-xl" :class="getSliderClassObj(task)"
+                        :style="getSliderStyleObj(task, index)">
                         <input v-if="index === taskIndex" class="bg-inherit p-3 flex-1" type="text" :value="task.name"
                             @change="updateTask">
                         <div v-else class="py-3 px-4 flex-1">{{ task.name }}</div>
@@ -220,7 +257,7 @@ getTasks()
     .details {
         // opacity: 0;
         box-shadow: 0 2px 16px rgba(0, 0, 0, .25);
-        transform: scale(1.05);
+        // transform: scale(1.05);
         border-top: 1px solid;
         border-bottom: 1px solid;
     }

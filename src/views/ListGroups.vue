@@ -31,7 +31,7 @@ async function addGroup() {
                     <IconCheck />
                 </div>
                 <div class="w-full z-10 flex flex-row">
-                    <div class="p-3 flex-1" :style="{ 'background-color': getBackgroundColor(index, group.length) }">{{
+                    <div class="p-3 flex-1" :style="{ 'background-color': getBackgroundColor(index, groups.length) }">{{
                         group.name }}</div>
                     <RouterLink :to="{ name: 'tasks', params: { id: group.id } }"
                         class="flex items-center justify-center w-14 h-14 bg-blue-400">

@@ -5,7 +5,7 @@ function getTaskElement(event: Event) {
 
 function getTaskID(event: Event) {
   const element = getTaskElement(event)
-  return element.dataset.id
+  return element.id
 }
 function getTaskIndex(event: Event) {
   const element = getTaskElement(event)
