@@ -1,26 +1,20 @@
 import { ref } from 'vue'
 
-export default function useColor(h = 212, s = 93, l = 53) {
-  const baseH = ref(h)
-  const baseS = ref(s)
-  const baseL = ref(l)
-  const stepH = ref(-2.5)
-  const stepS = ref(1)
-  const stepL = ref(2.5)
-  const maxColorSpan = ref(5)
-  const spanH = ref(maxColorSpan.value * stepH.value)
-  const spanS = ref(maxColorSpan.value * stepS.value)
-  const spanL = ref(maxColorSpan.value * stepL.value)
+export default function useColor(BASE_H = 212, BASE_S = 93, BASE_L = 53) {
+  const STEP_H = 3
+  const STEP_L = 1
+  const MAX_COLOR_SPAN = 7
+  const SPAN_H = MAX_COLOR_SPAN * STEP_H
+  const SPAN_L = MAX_COLOR_SPAN * STEP_L
 
   function getBackgroundColor(index: number, count: number) {
-    const sH = count > maxColorSpan.value ? spanH.value / count : stepH.value
-    const sS = count > maxColorSpan.value ? spanS.value / count : stepS.value
-    const sL = count > maxColorSpan.value ? spanL.value / count : stepL.value
+    const sH = count > MAX_COLOR_SPAN && !index ? SPAN_H / count : STEP_H
+    const sL = count > MAX_COLOR_SPAN && !index  ? SPAN_L / count : STEP_L
 
-    return `hsl(${baseH.value + index * sH}, 
-        ${Math.min(100, baseS.value + index * sS )}%, 
-        ${Math.min(100, baseL.value + index * sL)}%)`
+    return `hsl(${BASE_H + index * sH}, 
+        ${index ? BASE_S - 10 : BASE_S }%, 
+        ${BASE_L + index * sL}%)`
   }
 
-  return { baseH, baseS, baseL, getBackgroundColor }
+  return { getBackgroundColor }
 }

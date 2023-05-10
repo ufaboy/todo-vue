@@ -2,7 +2,7 @@
 import { ref, watch, computed } from "vue";
 import { useRoute } from 'vue-router'
 import { firebaseApp } from "@/utils/firebase";
-import { documentId, query, getFirestore, where, collection, getDocs, getCountFromServer } from "firebase/firestore";
+import { query, getFirestore, where, collection, getDocs } from "firebase/firestore";
 import type { Group, Task } from "@/utils/interfaces";
 
 const route = useRoute()
@@ -41,14 +41,17 @@ async function getTasks(groupID: string) {
   return taskArray
 }
 function sortTasks(unsortedTasks: Task[]) {
-  console.log('sortTasks', groups.value?.length);
-  
   if (groupTasks.value) {
     let arr = []
     for (const t of groupTasks.value) {
       const x = unsortedTasks.find(element => element.id === t) as Task
       if (x) arr.push(x)
     }
+    arr.sort((a, b) => {
+      return (a.completedAt ? a.completedAt.seconds : 0) - (b.completedAt ? b.completedAt.seconds : 0)
+    })
+    console.log('sortTasks', arr);
+    
     return arr
   } else return []
 }

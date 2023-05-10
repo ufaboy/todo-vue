@@ -11,7 +11,7 @@ const props = defineProps<{
     groups: Group[]
     tasks?: Task[]
 }>()
-const { baseH, baseS, baseL, getBackgroundColor } = useColor()
+const { getBackgroundColor } = useColor()
 const db = getFirestore(firebaseApp);
 const groupName = ref<string>()
 

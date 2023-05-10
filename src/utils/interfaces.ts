@@ -1,3 +1,5 @@
+import type { Timestamp } from "firebase/firestore"
+
 interface BaseTask {
   name: string
   groupId: string
@@ -5,9 +7,8 @@ interface BaseTask {
 
 interface Task extends BaseTask {
   id: string
-  createdAt: string
-  completedAt: string
-  deletedAt: string
+  createdAt: Timestamp
+  completedAt: Timestamp
 }
 interface BaseGroup {
   name: string
@@ -16,8 +17,7 @@ interface Group extends BaseGroup {
   id: string
   tasks?: string[]
   taskCount: number
-  createdAt: string
-  deletedAt: string
+  createdAt: Timestamp
 }
 
 export type { BaseTask, BaseGroup, Task, Group }

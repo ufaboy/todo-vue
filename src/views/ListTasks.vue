@@ -36,13 +36,23 @@ function pageClickHandler(event: Event) {
     if (Number.isInteger(taskIndex.value)) {
         taskIndex.value = undefined
         resetEditElements()
-    } else if (newTaskShow.value) {
-        newTaskShow.value = false
-    } else newTaskShow.value = true
+    } else newTaskShow.value = !newTaskShow.value
     console.log('pageClickHandler', { event: event });
 }
-function addTask() {
-    newTaskShow.value = true
+async function addTask() {
+    const result = await addDoc(collection(db, "tasks"), {
+        name: taskText.value,
+        groupId: groupId.value,
+        createdAt: serverTimestamp()
+    });
+    const docRef = doc(db, "groups", groupId.value);
+    await updateDoc(docRef, {
+        tasks: [...props.tasks.map(item => item.id), result.id]
+    });
+    newTaskShow.value = false
+    taskIndex.value = undefined
+    taskText.value = ''
+    emit('get-tasks')
 }
 async function updateTask(event: Event) {
     const taskID = getTaskID(event)
@@ -74,6 +84,7 @@ async function completeTask(event: Event) {
     emit('get-tasks')
 }
 async function deleteTask(event: Event) {
+    console.log('deleteTask', { event:event });
     resetSliderStyle(event)
     const taskElement = getTaskElement(event)
     const taskID = getTaskID(event)
@@ -84,21 +95,6 @@ async function deleteTask(event: Event) {
     emit('get-tasks')
 }
 
-async function saveNewTask() {
-    const result = await addDoc(collection(db, "tasks"), {
-        name: taskText.value,
-        groupId: groupId.value,
-        createdAt: serverTimestamp()
-    });
-    const docRef = doc(db, "groups", groupId.value);
-    await updateDoc(docRef, {
-        tasks: [...props.tasks.map(item => item.id), result.id]
-    });
-    newTaskShow.value = false
-    taskIndex.value = undefined
-    taskText.value = ''
-    emit('get-tasks')
-}
 function getOrderTasksInGroup() {
     const orderedTasks: string[] = []
     const taskElements = document.querySelectorAll(".task");
@@ -125,6 +121,7 @@ function dragOverHandler(event: DragEvent) {
 }
 function dragEndHandler(event: Event) {
     const taskElement = getTaskElement(event)
+    resetSliderStyle(event)
     taskElement.classList.remove('dragging')
     const orderedTasks = getOrderTasksInGroup()
     saveOrderTasks(orderedTasks)
@@ -160,7 +157,9 @@ function mouseDownHandler(event: MouseEvent) {
     taskElement.addEventListener('mousemove', mouseMoveHandler)
 }
 function mouseUpHandler(event: MouseEvent) {
+    console.log('mouseUpHandler', { event: event });
     const taskElement = getTaskElement(event)
+    resetSliderStyle(event)
     clearTimeout(longPressTimer.value)
     const index = Number(taskElement.dataset.index)
     if (Number.isInteger(taskIndex.value) && index !== taskIndex.value) {
@@ -176,6 +175,7 @@ function mouseUpHandler(event: MouseEvent) {
     }
 }
 function mouseMoveHandler(event: MouseEvent) {
+    clearTimeout(longPressTimer.value)
     const taskElement = getTaskElement(event)
     const sliderElement = (event.target as HTMLElement).closest('.slider') as HTMLElement
     taskElement.removeEventListener('mouseup', mouseUpHandler)
@@ -187,17 +187,26 @@ function mouseMoveHandler(event: MouseEvent) {
     } else if (diffX < -40) {
         taskElement.addEventListener('mouseup', deleteTask)
         taskElement.addEventListener('mouseleave', deleteTask)
+    } else {
+        sliderElement.style.backgroundColor = sliderElement.dataset.bg as string
+        taskElement.removeEventListener('mouseup', deleteTask)
+        taskElement.removeEventListener('mouseleave', deleteTask)
+        taskElement.removeEventListener('mouseup', completeTask)
+        taskElement.removeEventListener('mouseleave', completeTask)
+        taskElement.addEventListener('mouseup', resetSliderStyle)
     }
     sliderElement.style.transform = `translate3d(${diffX}px, 0px, 0px)`
-    console.log('mouseMoveHandler', { diffX: diffX });
+    // console.log('mouseMoveHandler', { diffX: diffX });
 }
 function resetSliderStyle(event: Event) {
     const taskElement = getTaskElement(event)
     taskElement.removeEventListener('mouseup', mouseUpHandler)
     taskElement.removeEventListener('mousemove', mouseMoveHandler)
     taskElement.removeEventListener('mouseleave', completeTask)
+    taskElement.removeEventListener('mouseup', resetSliderStyle)
     const sliderElement = taskElement.querySelector('.slider') as HTMLElement
     sliderElement.style.transform = ''
+    sliderElement.style.backgroundColor = sliderElement.dataset.bg as string
 }
 function getSliderClassObj(task: Task) {
     return { 'line-through bg-black text-gray-500': task.completedAt }
@@ -214,24 +223,24 @@ function getSliderStyleObj(task: Task, index: number) {
 
 </script>
 <template>
-    <div class="min-h-full" @click.self="pageClickHandler">
+    <div class="min-h-full pb-16" @click.self="pageClickHandler">
         <input v-if="newTaskShow" class="bg-blue-300 p-3 w-full" autofocus type="text" v-model="taskText"
-            @change="saveNewTask">
+            @change="addTask">
         <ul id="task-list" class="list relative" :class="{ 'shade': taskIndex !== undefined }" :style="ulStyles">
             <li :id="task.id" :data-index="index" v-for="(task, index) in tasks" :key="task.id"
                 @dragstart="dragStartHandler" @dragover="dragOverHandler" @dragend="dragEndHandler"
                 @mousedown="mouseDownHandler" class="task w-full text-xl font-bold ">
                 <div class="details w-full flex flex-row flex-nowrap relative">
-                    <div class="absolute left-0 top-0">
+                    <div class="absolute left-0 top-0 h-full flex items-center">
                         <IconCheck />
                     </div>
                     <div class="slider w-full z-10 flex flex-row text-xl" :class="getSliderClassObj(task)"
-                        :style="getSliderStyleObj(task, index)">
+                        :style="getSliderStyleObj(task, index)" :data-bg="getBackgroundColor(index, tasks.length)">
                         <input v-if="index === taskIndex" class="bg-inherit p-3 flex-1" type="text" :value="task.name"
                             @change="updateTask">
                         <div v-else class="py-3 px-4 flex-1">{{ task.name }}</div>
                     </div>
-                    <div class="absolute right-0 top-0">
+                    <div class="absolute right-0 top-0 h-full flex items-center text-red-600">
                         <IconCross />
                     </div>
                 </div>
